@@ -5,9 +5,9 @@
 #
 # empty logging functions to avoid errors
 #  for anyone who lacks inject-logger
-warn () {}
-debug () {}
-state () {}
+warn () { return 1 }
+debug () { return 1 }
+state () { return 1 }
 #
 # source "$HOME/.zsh-custom/inject-logger.zsh"
 # log_source "live_reload.zsh"
@@ -42,7 +42,8 @@ _live_reload_get_mod_time () {
     time=$(gstat -c "%Y" "$(realpath "$target")")
     # (($?)) && return 1
   else
-    warn "cannot get last-modified time: no such path '$target'"
+    warn "no such file or directory: $target" ||
+    echo "no such file or directory: $target" >&2 
   fi
 
   echo $time
@@ -56,8 +57,8 @@ _live_reload_get_mod_time () {
 source-reload () {
   [[ $# -gt 0 ]] && debug "=> called with '$@'" || debug "=> called with no args"
 
-  local _force_reload _reload_sources
-  _reload_sources=( $@ )
+  local _force _sources _failed
+  _sources=( $@ )
 
   if [[ $# -eq 0 ]];
   then
@@ -65,7 +66,7 @@ source-reload () {
     do
       # the mod-time here will reflect the parent directory of the glob path
       local mod_time=$( _live_reload_get_mod_time $(dirname "$glob") )
-      [[ -z mod_time ]] && continue  # skip file if mod_time fails
+      [[ -z $mod_time ]] && _failed=1 && continue  # skip file if mod_time fails
       
       if [[ $SOURCE_AUTO_TRACK_TIMES[$glob] -lt $mod_time ]]
       then
@@ -84,26 +85,27 @@ source-reload () {
     done
   fi
 
-  [[ $#_reload_sources -eq 0 ]] && _reload_sources=( ${(k)SOURCE_MOD_TIMES[@]} ) || _force_reload=1
-  for file in $_reload_sources
+  [[ $#_sources -eq 0 ]] && _sources=( ${(k)SOURCE_MOD_TIMES[@]} ) || _force=1
+  for file in $_sources
   do
     debug "checking file '$file' timestamps..."
 
     local mod_time=$(_live_reload_get_mod_time "$file" )
-    [[ -z $mod_time ]] && continue  # skip file if mod_time fails
+    [[ -z $mod_time ]] && _failed=1 && continue  # skip file if mod_time fails
 
     debug "last: $SOURCE_MOD_TIMES[$file], curr: $mod_time"
-    if [[ $_force_reload -gt 0 || $SOURCE_MOD_TIMES[$file] -lt $mod_time ]]
+    if [[ $_force -gt 0 || $SOURCE_MOD_TIMES[$file] -lt $mod_time ]]
     then
       # only log initial file load when state-logging is enabled
-      [[ $SOURCE_MOD_TIMES[$file] -gt 0 ]] && echo "[reloading $file]" || state "[loading $file]"
+      [[ $SOURCE_MOD_TIMES[$file] -gt 0 ]] &&
+        echo "[reloading $file]" || state "[loading $file]"
 
       source "$file";
       SOURCE_MOD_TIMES[$file]=$mod_time
     fi
   done
 
-  return 0
+  [[ $_failed -gt 0 ]] && return 1 || return 0
 }
 
 # automatically check one or more target path-globs for new files to track
@@ -179,7 +181,8 @@ source-track () {
         return 0
         ;;
       --*)
-        warn "live-reload: unknown argument '$1'" || echo "live-reload: unknown argument '$1'"
+        warn "live-reload: unknown argument '$1'" ||
+        echo "live-reload: unknown argument '$1'" >&2
         return 1
         ;;
       *)
@@ -210,10 +213,12 @@ source-untrack () {
 
   for filepath in $@
   do
-    [[ -n SOURCE_MOD_TIMES[$filepath] ]] && state "stopped tracking file '$filepath'"
+    [[ -n SOURCE_MOD_TIMES[$filepath] ]] &&
+    state "stopped tracking file '$filepath'"
     unset SOURCE_MOD_TIMES[$filepath]
 
-    [[ -n SOURCE_AUTO_TRACK_TIMES[$filepath] ]] && state "stopped tracking auto-track path '$filepath'"
+    [[ -n SOURCE_AUTO_TRACK_TIMES[$filepath] ]] &&
+    state "stopped tracking auto-track path '$filepath'"
     unset SOURCE_AUTO_TRACK_TIMES[$filepath]
     unset SOURCE_AUTO_TRACK_ARGS[$filepath]
   done
