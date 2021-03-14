@@ -1,11 +1,10 @@
 #!/bin/zsh
 
 
-
 ### LOGGING UTILITY ###
 source "$HOME/.zsh-custom/inject-logger.zsh"
-log_source "rc-updater.zsh"
-log_level '3'
+log_source "live_reload.zsh"
+# log_level 'debug'
 
 
 
@@ -16,24 +15,27 @@ log_level '3'
 
 # tracks the last reload of targeted files
 #   targets should be defined in glob-form or absolute path
-declare -Ag RC_MOD_TIMES
-export RC_MOD_TIMES
-declare -Ag RC_AUTO_ADD_TIMES
-export RC_AUTO_ADD_TIMES
-declare -Ag RC_AUTO_ADD_ARGS
-export RC_AUTO_ADD_ARGS
+declare -Ag SOURCE_MOD_TIMES
+export SOURCE_MOD_TIMES
+declare -Ag SOURCE_AUTO_TRACK_TIMES
+export SOURCE_AUTO_TRACK_TIMES
+declare -Ag SOURCE_AUTO_TRACK_ARGS
+export SOURCE_AUTO_TRACK_ARGS
 
 
 # get the "last modified" time of a file
-_rc_updater_get_mod_time () {
-  [[ $# -gt 0 ]] && debug "received '$@'" || return 1
+_live_reload_get_mod_time () {
+  # [[ $# -gt 0 ]] && debug "=> called with '$@'"
+  [[ $# -eq 0 ]] && return 1
 
-  if [ -e "$1" ]
+  target=$(eval "echo \"$1\"")
+
+  if [ -e "$target" ]
   then
-    time=$( gstat -c "%Y" "$(realpath $1)" )
+    time=$(gstat -c "%Y" "$(realpath "$target")")
     # (($?)) && return 1
   else
-    warn "cannot get last-modified time: no such path '$1'"
+    warn "cannot get last-modified time: no such path '$target'"
   fi
 
   echo $time
@@ -42,101 +44,91 @@ _rc_updater_get_mod_time () {
 }
 
 
-# reload target files via `source` command
+# reload target files via 'source' command
 #   targets should be defined in glob-form
-rc-reload () {
-  [[ $# -gt 0 ]] && debug "received '$@'"
+source-reload () {
+  [[ $# -gt 0 ]] && debug "=> called with '$@'" || debug "=> called with no args"
 
   if [[ $# -eq 0 ]];
   then
-    for filepath in ${RC_AUTO_ADD_TIMES[@]}
+    for glob in ${(k)SOURCE_AUTO_TRACK_TIMES[@]}
     do
-      local mod_time=$(_rc_updater_get_mod_time "$filepath")
-      [ -z mod_time ] && continue  # skip file if mod_time fails
-
-      debug "found tracker '$filepath' in RC_AUTO_ADDS"
-      rc-track "$RC_AUTO_ADD_ARGS[$filepath]" "$filepath"
-    done
-
-    for file in ${(k)RC_MOD_TIMES[@]}
-    do
-      debug "checking file '$file'..."
-
-      local mod_time=$(_rc_updater_get_mod_time "$file")
-      [ -z mod_time ] && continue  # skip file if mod_time fails
-
-      debug "tracked: $RC_MOD_TIMES[$file], found: $mod_time"
-      if [[ $RC_MOD_TIMES[$file] -lt $mod_time ]];
+      # the mod-time here will reflect the parent directory of the glob path
+      local mod_time=$( _live_reload_get_mod_time $(dirname "$glob") )
+      [[ -z mod_time ]] && continue  # skip file if mod_time fails
+      
+      if [[ $SOURCE_AUTO_TRACK_TIMES[$glob] -lt $mod_time ]];
       then
-        # only log initial file load when state-logging is enabled
-        if [[ $RC_MOD_TIMES[$file] -eq 0 ]] && state "[loading $file]" || echo "[loading $file]"
+          debug "exploring auto-track glob '$glob'"
+          # debug "found configuration '${SOURCE_AUTO_TRACK_ARGS[$glob]}'"
 
-        source "$file";
-        RC_MOD_TIMES[$file]=$mod_time
-        
-        debug "RC_MOD_TIMES[$file] reloaded ($mod_time)"
+        SOURCE_AUTO_TRACK_TIMES[$glob]="$mod_time"
+        for file in $(eval "echo $glob")
+        do
+            debug "tracking-glob found '$file'"
+          source-track $SOURCE_AUTO_TRACK_ARGS[$glob] "$file"
+        done
+      else
+        debug "auto-track skipped glob '$glob' (up-to-date)"
       fi
     done
-  else
-    for rc in $@
-    do
-      debug "checking file '$file'..."
+  fi
 
-      local mod_time=$(_rc_updater_get_mod_time "$file")
-      [ -z mod_time ] && continue  # skip file if mod_time fails
+  local sources=( $@ )
+  [[ $#sources -eq 0 ]] && sources=( ${(k)SOURCE_MOD_TIMES[@]} )
+  for file in $sources
+  do
+    debug "checking file '$file' timestamps..."
 
-      echo "[loading $file]"
+    local mod_time=$(_live_reload_get_mod_time "$file")
+    [[ -z mod_time ]] && continue  # skip file if mod_time fails
+
+    debug "last: $SOURCE_MOD_TIMES[$file], curr: $mod_time"
+    if [[ $SOURCE_MOD_TIMES[$file] -lt $mod_time ]];
+    then
+      # only log initial file load when state-logging is enabled
+      [[ $SOURCE_MOD_TIMES[$file] -gt 0 ]] && echo "[reloading $file]" || state "[loading $file]"
 
       source "$file";
-      RC_MOD_TIMES[$file]=$mod_time
-      
-      debug "RC_MOD_TIMES[$file] reloaded ($mod_time)"
-    done
-  fi
+      SOURCE_MOD_TIMES[$file]=$mod_time
+    fi
+  done
 
   return 0
 }
 
 # automatically check one or more target path-globs for new files to track
-rc-auto-add () {
-  [[ $# -gt 0 ]] && debug "received '$@'" || return 1
+source-auto-track () {
+  [[ $# -gt 0 ]] && debug "=> called with '$@'"
+  [[ $# -eq 0 ]] && return 1
 
+  auto_track_args=()
   while [[ $# -gt 0 ]]
   do
-    local args=()
-
-      debug "arg '$1'"
     case "$1" in
       --set|-s)
-        args+=($1 $2)
+        auto_track_args+=($1 $2)
         shift 2
-          debug "auto-add args: $args[@]"
         ;;
       --immediate|-i)
-        args+=($1)
+        auto_track_args+=($1)
         shift
-          debug "auto-add args: $args[@]"
         ;;
       --no-load|-n)
-        args+=($1)
+        auto_track_args+=($1)
         shift
-          debug "auto-add args: $args[@]"
         ;;
-      --auto-add|-a)
-        warn "invalid arg '$1' in rc-auto-add"
+      --auto-track|-a)
+        warn "invalid arg '$1' in source-auto-track"
         shift
         ;;
       *)
         local filepath="$1"
         shift
 
-        # the mod-time here will reflect the parent directory of the glob path
-        local time="$(_rc_updater_get_mod_time `dirname "$filepath"`)"
-          debug "auto-add path '$filepath' init time is '$time'"
-
-        RC_AUTO_ADD_TIMES["$filepath"]="$time"
-        RC_AUTO_ADD_ARGS["$filepath"]="${args[@]}"
-        state "auto-tracking path '$filepath' with initial time '$time'"
+        SOURCE_AUTO_TRACK_TIMES[$filepath]='0'
+        SOURCE_AUTO_TRACK_ARGS[$filepath]="${auto_track_args[@]}"
+        state "following glob '$filepath' with configuration '${auto_track_args[@]}'"
         ;;
     esac
   done
@@ -145,15 +137,15 @@ rc-auto-add () {
 }
 
 # track one or more targets indicated by the passed file-glob(s)
-rc-track () {
-  [[ $# -gt 0 ]] && debug "received '$@'" || return 1
+source-track () {
+  [[ $# -gt 0 ]] && debug "=> called with '$@'"
+  [[ $# -eq 0 ]] && return 1
 
   local time
   local filepath
 
   while [[ $# -gt 0 ]]
   do
-      debug "arg '$1'"
     case "$1" in
       --set|-s)
         time="$2"
@@ -167,25 +159,28 @@ rc-track () {
         time=''
         shift
         ;;
-      --auto-add|-a)
+      --auto-track|-a)
         shift
-        rc-auto-add $@
-        break
+        source-auto-track $@
+        return 0
+        ;;
+      --*)
+        warn "live-reload: unknown argument '$1'" || echo "live-reload: unknown argument '$1'"
+        return 1
         ;;
       *)
         filepath="$1"
         shift
-          debug "filpath is '$filepath' with tracked timestamp '$RC_MOD_TIMES[$filepath]'"
 
-        [ -z "$time" ] && time="$(_rc_updater_get_mod_time "$filepath")"
-          debug "file init time is '$time'"
-
-        if [ -n "$RC_MOD_TIMES[$filepath]" ]
+        if [ -z "$SOURCE_MOD_TIMES[$filepath]" ]
         then
-          state "already tracking file '$filepath'"
-        else
-          RC_MOD_TIMES[$filepath]="$time"
+          [[ -z "$time" ]] && time="$(_live_reload_get_mod_time "$filepath")"
+            debug "file init time is '$time'"
+
+          SOURCE_MOD_TIMES[$filepath]="$time"
           state "tracking file '$filepath' with initial time '$time'"
+        else
+          state "already tracking file '$filepath'"
         fi
         ;;
     esac
@@ -195,24 +190,27 @@ rc-track () {
 }
 
 
-rc-untrack () {
-  [[ $# -gt 0 ]] && debug "received '$@'" || return 1
+source-untrack () {
+  [[ $# -gt 0 ]] && debug "=> called with '$@'"
+  [[ $# -eq 0 ]] && return 1
 
   for filepath in $@
   do
-    [[ -n RC_MOD_TIMES[$filepath] ]] && state "stopped tracking file '$filepath'"
-    unset RC_MOD_TIMES[$filepath]
+    [[ -n SOURCE_MOD_TIMES[$filepath] ]] && state "stopped tracking file '$filepath'"
+    unset SOURCE_MOD_TIMES[$filepath]
 
-    [[ -n RC_AUTO_ADD_TIMES[$filepath] ]] && state "stopped tracking auto-add path '$filepath'"
-    unset RC_AUTO_ADD_TIMES[$filepath]
-    unset RC_AUTO_ADD_ARGS[$filepath]
+    [[ -n SOURCE_AUTO_TRACK_TIMES[$filepath] ]] && state "stopped tracking auto-track path '$filepath'"
+    unset SOURCE_AUTO_TRACK_TIMES[$filepath]
+    unset SOURCE_AUTO_TRACK_ARGS[$filepath]
   done
 
   return 0
 }
 
 
-rc-list () {
+source-list () {
+  [[ $# -gt 0 ]] && debug "=> called with '$@'" || debug "=> called with no args"
+
   if [[ $# -gt 0 ]]
   then
     local tracked=()
@@ -234,15 +232,15 @@ rc-list () {
     fi
   else
     state 'the following files are being tracked:'
-    echo "${(kj:\n:)RC_MOD_TIMES[@]}"
+    echo "${(kj:\n:)SOURCE_MOD_TIMES[@]}"
 
     return 0
   fi
 }
 
 
-_rc_updater_help () {
-  [[ $# -gt 0 ]] && debug "received '$@'"
+_source_updater_help () {
+  [[ $# -gt 0 ]] && debug "=> called with '$@'" || debug "=> called with no args"
 
   if [[ $# -gt 0 ]]
   then
@@ -289,7 +287,7 @@ _rc_updater_help () {
 				HELP
         ;;
       *)
-        _rc_updater_short_help
+        _source_updater_short_help
         ;;
     esac
   fi
@@ -298,9 +296,9 @@ _rc_updater_help () {
 }
 
 
-_rc_updater_short_help () {
+_source_updater_short_help () {
   cat <<-HELP
-    rc-updater help blurb
+    source-updater help blurb
           - todo - 
 	HELP
 
@@ -308,8 +306,8 @@ _rc_updater_short_help () {
 }
 
 
-rc-updater () {
-  [[ $# -gt 0 ]] && debug "received '$@'"
+source-updater () {
+  [[ $# -gt 0 ]] && debug "=> called with '$@'" || debug "=> called with no args"
 
   while [[ $# -gt 0 ]]
   do
@@ -319,23 +317,23 @@ rc-updater () {
     shift
     case "$command" in
       init|reset)
-        RC_MOD_TIMES=() ;;
+        SOURCE_MOD_TIMES=() ;;
       --help|help)
-        _rc_updater_help $@ ;;
+        _source_updater_help $@ ;;
       list)
-        rc-list $@;;
+        source-list $@;;
       reload|update)
-        rc-reload $@ ;;
+        source-reload $@ ;;
       track)
-        rc-track $@ ;;
+        source-track $@ ;;
       untrack|forget)
-        rc-untrack $@ ;;
+        source-untrack $@ ;;
       *)
         break ;;
     esac
   done
 
-  _rc_updater_short_help
+  _source_updater_short_help
   return 1
 }
 
