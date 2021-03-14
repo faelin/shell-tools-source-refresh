@@ -2,15 +2,22 @@
 
 
 ### LOGGING UTILITY ###
-source "$HOME/.zsh-custom/inject-logger.zsh"
-log_source "live_reload.zsh"
+#
+# empty logging functions to avoid errors
+#  for anyone who lacks inject-logger
+warn () {}
+debug () {}
+state () {}
+#
+# source "$HOME/.zsh-custom/inject-logger.zsh"
+# log_source "live_reload.zsh"
 # log_level 'debug'
 
 
 
-###############################################
-### auto reload modified shell and rc files ###
-###############################################
+################################################
+### auto refresh modified shell and rc files ###
+################################################
 
 
 # tracks the last reload of targeted files
@@ -49,6 +56,9 @@ _live_reload_get_mod_time () {
 source-reload () {
   [[ $# -gt 0 ]] && debug "=> called with '$@'" || debug "=> called with no args"
 
+  local _force_reload _reload_sources
+  _reload_sources=( $@ )
+
   if [[ $# -eq 0 ]];
   then
     for glob in ${(k)SOURCE_AUTO_TRACK_TIMES[@]}
@@ -57,7 +67,7 @@ source-reload () {
       local mod_time=$( _live_reload_get_mod_time $(dirname "$glob") )
       [[ -z mod_time ]] && continue  # skip file if mod_time fails
       
-      if [[ $SOURCE_AUTO_TRACK_TIMES[$glob] -lt $mod_time ]];
+      if [[ $SOURCE_AUTO_TRACK_TIMES[$glob] -lt $mod_time ]]
       then
           debug "exploring auto-track glob '$glob'"
           # debug "found configuration '${SOURCE_AUTO_TRACK_ARGS[$glob]}'"
@@ -74,17 +84,16 @@ source-reload () {
     done
   fi
 
-  local sources=( $@ )
-  [[ $#sources -eq 0 ]] && sources=( ${(k)SOURCE_MOD_TIMES[@]} )
-  for file in $sources
+  [[ $#_reload_sources -eq 0 ]] && _reload_sources=( ${(k)SOURCE_MOD_TIMES[@]} ) || _force_reload=1
+  for file in $_reload_sources
   do
     debug "checking file '$file' timestamps..."
 
-    local mod_time=$(_live_reload_get_mod_time "$file")
-    [[ -z mod_time ]] && continue  # skip file if mod_time fails
+    local mod_time=$(_live_reload_get_mod_time "$file" )
+    [[ -z $mod_time ]] && continue  # skip file if mod_time fails
 
     debug "last: $SOURCE_MOD_TIMES[$file], curr: $mod_time"
-    if [[ $SOURCE_MOD_TIMES[$file] -lt $mod_time ]];
+    if [[ $_force_reload -gt 0 || $SOURCE_MOD_TIMES[$file] -lt $mod_time ]]
     then
       # only log initial file load when state-logging is enabled
       [[ $SOURCE_MOD_TIMES[$file] -gt 0 ]] && echo "[reloading $file]" || state "[loading $file]"
@@ -123,12 +132,17 @@ source-auto-track () {
         shift
         ;;
       *)
-        local filepath="$1"
+        local glob="$1"
         shift
 
-        SOURCE_AUTO_TRACK_TIMES[$filepath]='0'
-        SOURCE_AUTO_TRACK_ARGS[$filepath]="${auto_track_args[@]}"
-        state "following glob '$filepath' with configuration '${auto_track_args[@]}'"
+        if [ -z "$SOURCE_AUTO_TRACK_TIMES[$glob]" ]
+        then
+          SOURCE_AUTO_TRACK_TIMES[$glob]='0'
+          SOURCE_AUTO_TRACK_ARGS[$glob]="${auto_track_args[@]}"
+          state "following glob '$glob' with configuration '${auto_track_args[@]}'"
+        else
+          state "already following glob '$glob'"
+        fi
         ;;
     esac
   done
@@ -239,7 +253,7 @@ source-list () {
 }
 
 
-_source_updater_help () {
+_live_reload_help () {
   [[ $# -gt 0 ]] && debug "=> called with '$@'" || debug "=> called with no args"
 
   if [[ $# -gt 0 ]]
@@ -296,9 +310,9 @@ _source_updater_help () {
 }
 
 
-_source_updater_short_help () {
+_live_reload_short_help () {
   cat <<-HELP
-    source-updater help blurb
+    live-reload help blurb
           - todo - 
 	HELP
 
@@ -306,7 +320,7 @@ _source_updater_short_help () {
 }
 
 
-source-updater () {
+live-reload () {
   [[ $# -gt 0 ]] && debug "=> called with '$@'" || debug "=> called with no args"
 
   while [[ $# -gt 0 ]]
@@ -319,7 +333,7 @@ source-updater () {
       init|reset)
         SOURCE_MOD_TIMES=() ;;
       --help|help)
-        _source_updater_help $@ ;;
+        _live_reload_help $@ ;;
       list)
         source-list $@;;
       reload|update)
@@ -333,7 +347,7 @@ source-updater () {
     esac
   done
 
-  _source_updater_short_help
+  _live_reload_short_help
   return 1
 }
 
