@@ -26,12 +26,15 @@ export SOURCE_RELOAD_METHOD
 
 # tracks the last reload of targeted files
 #   targets should be defined in glob-form or absolute path
-declare -Ag SOURCE_MOD_TIMES
-export SOURCE_MOD_TIMES
-declare -Ag SOURCE_AUTO_TRACK_TIMES
-export SOURCE_AUTO_TRACK_TIMES
-declare -Ag SOURCE_AUTO_TRACK_ARGS
-export SOURCE_AUTO_TRACK_ARGS
+declare -Ag SOURCE_TRACKER_TIMES
+export SOURCE_TRACKER_TIMES
+declare -Ag SOURCE_AUTO_TRACKER_TIMES
+export SOURCE_AUTO_TRACKER_TIMES
+declare -Ag SOURCE_AUTO_TRACKER_ARGS
+export SOURCE_AUTO_TRACKER_ARGS
+declare -Ag SOURCE_AUTO_TRACKED
+export SOURCE_AUTO_TRACKED
+
 
 
 # get the "last modified" time of a file
@@ -68,13 +71,15 @@ source-reload () {
   local _specified=0
   local _mod_time=0
   local _failed=0
-  local _source=0
+  local _tracked_time=0
   local _sources=( $@ )
 
-  ## if this function is called with no args
-  if ! (( $#_sources ))
+  ## if this function is called with no args, then check all trackers
+  if (( $#_sources ))
   then
-    for glob in ${(k)SOURCE_AUTO_TRACK_TIMES[@]}
+    _specified=1
+  else
+    for glob in ${(k)SOURCE_AUTO_TRACKER_TIMES[@]}
     do
       # the mod-time here will reflect the parent directory of the glob path
       _mod_time=$( _source_reload_get_mod_time "$(dirname "$glob")" )
@@ -86,31 +91,31 @@ source-reload () {
         continue
       fi
 
-      (( $SOURCE_MOD_TIMES[$file] )) && _source=$SOURCE_AUTO_TRACK_TIMES[$glob]
-      if (( $_source < $_mod_time ))
+      (( $SOURCE_TRACKER_TIMES[$file] )) && _tracked_time=$SOURCE_AUTO_TRACKER_TIMES[$glob]
+      if (( $_tracked_time < $_mod_time ))
       then
           debug "exploring auto-track glob '$glob'"
-          # debug "found configuration '${SOURCE_AUTO_TRACK_ARGS[$glob]}'"
+          # debug "found configuration '${SOURCE_AUTO_TRACKER_ARGS[$glob]}'"
 
-        SOURCE_AUTO_TRACK_TIMES[$glob]="$_mod_time"
+        SOURCE_AUTO_TRACKER_TIMES[$glob]=$_mod_time
         for file in $(eval "echo $glob")
         do
             debug "tracking-glob found '$file'"
-          source-track $SOURCE_AUTO_TRACK_ARGS[$glob] "$file"
+
+          source-track $SOURCE_AUTO_TRACKER_ARGS[$glob] "$file" &&
+          SOURCE_AUTO_TRACKED[$file]=$_mod_time
         done
       else
         debug "auto-track skipped glob '$glob' (up-to-date)"
       fi
     done
 
-    _sources=( ${(k)SOURCE_MOD_TIMES[@]} )
-  else
-    _specified=1
+    _sources=( ${(k)SOURCE_TRACKER_TIMES[@]} )
   fi
 
 
   _mod_time=0
-  _source=0
+  _tracked_time=0
   for file in $_sources
   do
       debug "checking file '$file' timestamps..."
@@ -120,30 +125,29 @@ source-reload () {
     # skip file if _mod_time is 0 (i.e. failed)
     if ! (($_mod_time ))
     then
-      # source-reload returns 1 if any specified file fails to load
-      (( $_specified )) && _failed=1
-      source-untrack "$file"
+
+      if (( $_specified ))
+      then
+        # source-reload returns 1 if any specified file fails to load
+        SOURCE_RELOAD_METHOD "$file" || _failed=1
+      else
+        # only untrack if $file was found by an auto-track pattern
+        (( $(k)SOURCE_AUTO_TRACKED[(Ie)$file] )) && source-untrack "$file"
+      fi
+      
       continue
     fi
 
-      debug "last: $SOURCE_MOD_TIMES[$file], curr: $_mod_time"
+      debug "last: $SOURCE_TRACKER_TIMES[$file], curr: $_mod_time"
 
-    (( $SOURCE_MOD_TIMES[$file] )) && _source=$SOURCE_MOD_TIMES[$file]
-    if (( $_specified || $_source < $_mod_time ))
+    (( $SOURCE_TRACKER_TIMES[$file] )) && _tracked_time=$SOURCE_TRACKER_TIMES[$file]
+    if (( $_specified || $_tracked_time < $_mod_time ))
     then
-      # only log initial file load when state-loggingstate is enabled
-      if (( $_source ))
-      then
-        echo "[reloading $file]"
-      elif (( $_specified ))
-      then
-        state "[loading $file]"
-      else
-        echo "[loading $file]"
-      fi
+      # only log initial file load when state-logging is enabled
+      (( $_tracked_time )) && echo "[reloading $file]" || echo "[loading $file]"
 
       SOURCE_RELOAD_METHOD "$file";
-      SOURCE_MOD_TIMES[$file]=$_mod_time
+      SOURCE_TRACKER_TIMES[$file]=$_mod_time
     fi
   done
 
@@ -182,10 +186,10 @@ source-auto-track () {
         _glob="$1"
         shift
 
-        if ! (( $SOURCE_AUTO_TRACK_TIMES[$_glob] ))
+        if ! (( $SOURCE_AUTO_TRACKER_TIMES[$_glob] ))
         then
-          SOURCE_AUTO_TRACK_TIMES[$_glob]=0
-          SOURCE_AUTO_TRACK_ARGS[$_glob]="${auto_track_args[@]}"
+          SOURCE_AUTO_TRACKER_TIMES[$_glob]=0
+          SOURCE_AUTO_TRACKER_ARGS[$_glob]="${auto_track_args[@]}"
           state "following glob '$_glob' with configuration '${auto_track_args[@]}'"
         else
           state "already following glob '$_glob'"
@@ -238,13 +242,13 @@ source-track () {
         _path="$1"
         shift
 
-        if ! (( $SOURCE_MOD_TIMES[$_path] ))
+        if ! (( $SOURCE_TRACKER_TIMES[$_path] ))
         then
           # set $_time if it has not yet been set
           [[ -z "$_time" ]] && _time="$(_source_reload_get_mod_time "$_path")"
             debug "file init time is '$_time'"
 
-          SOURCE_MOD_TIMES[$_path]="$_time"
+          SOURCE_TRACKER_TIMES[$_path]="$_time"
           state "tracking file '$_path' with initial time '$_time'"
         else
           state "already tracking file '$_path'"
@@ -264,17 +268,18 @@ source-untrack () {
   local _path
   for _path in $@
   do
-    if (( SOURCE_MOD_TIMES[$_path] ))
+    if (( SOURCE_TRACKER_TIMES[$_path] ))
     then
-      echo "[untracking $_path]"
-      unset SOURCE_MOD_TIMES[$_path]
-    fi
 
-    if (( SOURCE_AUTO_TRACK_TIMES[$_path] ))
+      state "[untracking $_path]"
+      unset SOURCE_TRACKER_TIMES[$_path]
+
+    elif (( SOURCE_AUTO_TRACKER_TIMES[$_path] ))
     then
-      echo "[untracking $_path]"
-      unset SOURCE_AUTO_TRACK_TIMES[$_path]
-      unset SOURCE_AUTO_TRACK_ARGS[$_path]
+      state "[untracking $_path]"
+      unset SOURCE_AUTO_TRACKER_TIMES[$_path]
+      unset SOURCE_AUTO_TRACKER_ARGS[$_path]
+
     fi
   done
 
@@ -285,28 +290,28 @@ source-untrack () {
 source-list () {
   (( $# )) && debug "=> called with '$@'" || debug "=> called with no args"
 
-  if (( $# ))
-  then
-    local _tracked=()
-    
-    for key in ${(k)hash[@]}
-    do
-      [[ "$@" =~ "$key" ]] && _tracked+="$key"
-    done
-
-    if (( $#_tracked ))
+  local _tracked=()
+  for key in $@
+  do
+    if [[ ${(k)SOURCE_TRACKER_TIMES[(Ie)$key]} ]]
     then
-      state 'the following files are being tracked:'
-      echo "${(j:\n:)_tracked[@]}"
-
-      return 0
+      _tracked+="$key"
     else
-      warn "not tracking any files like '$@'"
+      warn "not tracking any files like '$key'" ||
+      echo "not tracking any files like '$key'" >&2
       return 1
     fi
+  done
+
+  if (( $#_tracked ))
+  then
+    state 'the following files are being tracked:'
+    echo "${(j:\n:)_tracked[@]}"
+
+    return 0
   else
     state 'the following files are being tracked:'
-    echo "${(kj:\n:)SOURCE_MOD_TIMES[@]}"
+    echo "${(kj:\n:)SOURCE_TRACKER_TIMES[@]}"
 
     return 0
   fi
@@ -391,7 +396,7 @@ main () {
     shift
     case "$command" in
       init|reset)
-        SOURCE_MOD_TIMES=() ;;
+        SOURCE_TRACKER_TIMES=() ;;
       --help|help)
         _source_reload_help $@ ;;
       list)
