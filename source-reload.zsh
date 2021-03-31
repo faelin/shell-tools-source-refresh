@@ -10,7 +10,7 @@ debug () { return 1 }
 state () { return 1 }
 #
 # source "$HOME/.zsh-custom/inject-logger.zsh"
-# log_source "live_reload.zsh"
+# log_source "source_reload.zsh"
 # log_level 'debug'
 
 
@@ -18,6 +18,10 @@ state () { return 1 }
 ################################################
 ### auto refresh modified shell and rc files ###
 ################################################
+
+
+alias SOURCE_RELOAD_METHOD='source'
+export SOURCE_RELOAD_METHOD
 
 
 # tracks the last reload of targeted files
@@ -31,49 +35,64 @@ export SOURCE_AUTO_TRACK_ARGS
 
 
 # get the "last modified" time of a file
-_live_reload_get_mod_time () {
-  # [[ $# -gt 0 ]] && debug "=> called with '$@'"
-  [[ $# -eq 0 ]] && return 1
+_source_reload_get_mod_time () {
+  # (( $# )) && debug "=> called with '$@'"
+  (( $# )) || return 1
 
   target=$(eval "echo \"$1\"")
 
+  local _failed=0
+  local _time=0
+
   if [ -e "$target" ]
   then
-    time=$(gstat -c "%Y" "$(realpath "$target")")
-    # (($?)) && return 1
+    _time=$(gstat -c "%Y" "$(realpath "$target")")
+    (( $_time )) || _failed=1
   else
     warn "no such file or directory: $target" ||
-    echo "no such file or directory: $target" >&2 
+    echo "no such file or directory: $target" >&2
+    _failed=1
   fi
 
-  echo $time
+  echo $_time
 
-  return 0
+  (( $_failed )) && return 1 || return 0
 }
 
 
 # reload target files via 'source' command
 #   targets should be defined in glob-form
 source-reload () {
-  [[ $# -gt 0 ]] && debug "=> called with '$@'" || debug "=> called with no args"
+  (( $# )) && debug "=> called with '$@'" || debug "=> called with no args"
 
-  local _force _sources _failed
-  _sources=( $@ )
+  local _specified=0
+  local _mod_time=0
+  local _failed=0
+  local _source=0
+  local _sources=( $@ )
 
-  if [[ $# -eq 0 ]];
+  ## if this function is called with no args
+  if ! (( $#_sources ))
   then
     for glob in ${(k)SOURCE_AUTO_TRACK_TIMES[@]}
     do
       # the mod-time here will reflect the parent directory of the glob path
-      local mod_time=$( _live_reload_get_mod_time $(dirname "$glob") )
-      [[ -z $mod_time ]] && _failed=1 && continue  # skip file if mod_time fails
-      
-      if [[ $SOURCE_AUTO_TRACK_TIMES[$glob] -lt $mod_time ]]
+      _mod_time=$( _source_reload_get_mod_time "$(dirname "$glob")" )
+
+      # skip file if _mod_time is 0 (i.e. failed)
+      if ! (($_mod_time ))
+      then
+        _failed=1
+        continue
+      fi
+
+      (( $SOURCE_MOD_TIMES[$file] )) && _source=$SOURCE_AUTO_TRACK_TIMES[$glob]
+      if (( $_source < $_mod_time ))
       then
           debug "exploring auto-track glob '$glob'"
           # debug "found configuration '${SOURCE_AUTO_TRACK_ARGS[$glob]}'"
 
-        SOURCE_AUTO_TRACK_TIMES[$glob]="$mod_time"
+        SOURCE_AUTO_TRACK_TIMES[$glob]="$_mod_time"
         for file in $(eval "echo $glob")
         do
             debug "tracking-glob found '$file'"
@@ -83,38 +102,64 @@ source-reload () {
         debug "auto-track skipped glob '$glob' (up-to-date)"
       fi
     done
+
+    _sources=( ${(k)SOURCE_MOD_TIMES[@]} )
+  else
+    _specified=1
   fi
 
-  [[ $#_sources -eq 0 ]] && _sources=( ${(k)SOURCE_MOD_TIMES[@]} ) || _force=1
+
+  _mod_time=0
+  _source=0
   for file in $_sources
   do
-    debug "checking file '$file' timestamps..."
+      debug "checking file '$file' timestamps..."
 
-    local mod_time=$(_live_reload_get_mod_time "$file" )
-    [[ -z $mod_time ]] && _failed=1 && continue  # skip file if mod_time fails
-
-    debug "last: $SOURCE_MOD_TIMES[$file], curr: $mod_time"
-    if [[ $_force -gt 0 || $SOURCE_MOD_TIMES[$file] -lt $mod_time ]]
+    _mod_time=$(_source_reload_get_mod_time "$file" 2>/dev/null )
+    
+    # skip file if _mod_time is 0 (i.e. failed)
+    if ! (($_mod_time ))
     then
-      # only log initial file load when state-logging is enabled
-      [[ $SOURCE_MOD_TIMES[$file] -gt 0 ]] &&
-        echo "[reloading $file]" || state "[loading $file]"
+      # source-reload returns 1 if any specified file fails to load
+      (( $_specified )) && _failed=1
+      source-untrack "$file"
+      continue
+    fi
 
-      source "$file";
-      SOURCE_MOD_TIMES[$file]=$mod_time
+      debug "last: $SOURCE_MOD_TIMES[$file], curr: $_mod_time"
+
+    (( $SOURCE_MOD_TIMES[$file] )) && _source=$SOURCE_MOD_TIMES[$file]
+    if (( $_specified || $_source < $_mod_time ))
+    then
+      # only log initial file load when state-loggingstate is enabled
+      if (( $_source ))
+      then
+        echo "[reloading $file]"
+      elif (( $_specified ))
+      then
+        state "[loading $file]"
+      else
+        echo "[loading $file]"
+      fi
+
+      SOURCE_RELOAD_METHOD "$file";
+      SOURCE_MOD_TIMES[$file]=$_mod_time
     fi
   done
 
-  [[ $_failed -gt 0 ]] && return 1 || return 0
+
+  (( $_failed )) && return 1 || return 0
 }
 
 # automatically check one or more target path-globs for new files to track
 source-auto-track () {
-  [[ $# -gt 0 ]] && debug "=> called with '$@'"
-  [[ $# -eq 0 ]] && return 1
+  (( $# )) && debug "=> called with '$@'"
+  (( $# )) || return 1
+
+  local _glob
 
   auto_track_args=()
-  while [[ $# -gt 0 ]]
+  while (( $# ))
   do
     case "$1" in
       --set|-s)
@@ -134,16 +179,16 @@ source-auto-track () {
         shift
         ;;
       *)
-        local glob="$1"
+        _glob="$1"
         shift
 
-        if [ -z "$SOURCE_AUTO_TRACK_TIMES[$glob]" ]
+        if ! (( $SOURCE_AUTO_TRACK_TIMES[$_glob] ))
         then
-          SOURCE_AUTO_TRACK_TIMES[$glob]='0'
-          SOURCE_AUTO_TRACK_ARGS[$glob]="${auto_track_args[@]}"
-          state "following glob '$glob' with configuration '${auto_track_args[@]}'"
+          SOURCE_AUTO_TRACK_TIMES[$_glob]=0
+          SOURCE_AUTO_TRACK_ARGS[$_glob]="${auto_track_args[@]}"
+          state "following glob '$_glob' with configuration '${auto_track_args[@]}'"
         else
-          state "already following glob '$glob'"
+          state "already following glob '$_glob'"
         fi
         ;;
     esac
@@ -154,25 +199,29 @@ source-auto-track () {
 
 # track one or more targets indicated by the passed file-glob(s)
 source-track () {
-  [[ $# -gt 0 ]] && debug "=> called with '$@'"
-  [[ $# -eq 0 ]] && return 1
+  (( $# )) && debug "=> called with '$@'"
+  (( $# )) || return 1
 
-  local time
-  local filepath
+  local _time
+  local _path
 
-  while [[ $# -gt 0 ]]
+  while (( $# ))
   do
     case "$1" in
       --set|-s)
-        time="$2"
+        _time="$2"
         shift 2
         ;;
+      --set*|-s*)
+        _time="${1##*=}"
+        shift
+        ;;
       --immediate|-i)
-        time='0'
+        _time='0'
         shift
         ;;
       --no-load|-n)
-        time=''
+        _time=''
         shift
         ;;
       --auto-track|-a)
@@ -181,23 +230,24 @@ source-track () {
         return 0
         ;;
       --*)
-        warn "live-reload: unknown argument '$1'" ||
-        echo "live-reload: unknown argument '$1'" >&2
+        warn "source-reload: unknown argument '$1'" ||
+        echo "source-reload: unknown argument '$1'" >&2
         return 1
         ;;
       *)
-        filepath="$1"
+        _path="$1"
         shift
 
-        if [ -z "$SOURCE_MOD_TIMES[$filepath]" ]
+        if ! (( $SOURCE_MOD_TIMES[$_path] ))
         then
-          [[ -z "$time" ]] && time="$(_live_reload_get_mod_time "$filepath")"
-            debug "file init time is '$time'"
+          # set $_time if it has not yet been set
+          [[ -z "$_time" ]] && _time="$(_source_reload_get_mod_time "$_path")"
+            debug "file init time is '$_time'"
 
-          SOURCE_MOD_TIMES[$filepath]="$time"
-          state "tracking file '$filepath' with initial time '$time'"
+          SOURCE_MOD_TIMES[$_path]="$_time"
+          state "tracking file '$_path' with initial time '$_time'"
         else
-          state "already tracking file '$filepath'"
+          state "already tracking file '$_path'"
         fi
         ;;
     esac
@@ -208,19 +258,24 @@ source-track () {
 
 
 source-untrack () {
-  [[ $# -gt 0 ]] && debug "=> called with '$@'"
-  [[ $# -eq 0 ]] && return 1
+  (( $# )) && debug "=> called with '$@'"
+  (( $# )) || return 1
 
-  for filepath in $@
+  local _path
+  for _path in $@
   do
-    [[ -n SOURCE_MOD_TIMES[$filepath] ]] &&
-    state "stopped tracking file '$filepath'"
-    unset SOURCE_MOD_TIMES[$filepath]
+    if (( SOURCE_MOD_TIMES[$_path] ))
+    then
+      echo "[untracking $_path]"
+      unset SOURCE_MOD_TIMES[$_path]
+    fi
 
-    [[ -n SOURCE_AUTO_TRACK_TIMES[$filepath] ]] &&
-    state "stopped tracking auto-track path '$filepath'"
-    unset SOURCE_AUTO_TRACK_TIMES[$filepath]
-    unset SOURCE_AUTO_TRACK_ARGS[$filepath]
+    if (( SOURCE_AUTO_TRACK_TIMES[$_path] ))
+    then
+      echo "[untracking $_path]"
+      unset SOURCE_AUTO_TRACK_TIMES[$_path]
+      unset SOURCE_AUTO_TRACK_ARGS[$_path]
+    fi
   done
 
   return 0
@@ -228,21 +283,21 @@ source-untrack () {
 
 
 source-list () {
-  [[ $# -gt 0 ]] && debug "=> called with '$@'" || debug "=> called with no args"
+  (( $# )) && debug "=> called with '$@'" || debug "=> called with no args"
 
-  if [[ $# -gt 0 ]]
+  if (( $# ))
   then
-    local tracked=()
+    local _tracked=()
     
     for key in ${(k)hash[@]}
     do
-      [[ "$key" =~ "$@" ]] && tracked+="$key"
+      [[ "$@" =~ "$key" ]] && _tracked+="$key"
     done
 
-    if [[ $#tracked -gt 0 ]]
+    if (( $#_tracked ))
     then
       state 'the following files are being tracked:'
-      echo "${(j:\n:)tracked[@]}"
+      echo "${(j:\n:)_tracked[@]}"
 
       return 0
     else
@@ -258,10 +313,10 @@ source-list () {
 }
 
 
-_live_reload_help () {
-  [[ $# -gt 0 ]] && debug "=> called with '$@'" || debug "=> called with no args"
+_source_reload_help () {
+  (( $# )) && debug "=> called with '$@'" || debug "=> called with no args"
 
-  if [[ $# -gt 0 ]]
+  if (( $# ))
   then
     case "$1" in
       forget)
@@ -315,9 +370,9 @@ _live_reload_help () {
 }
 
 
-_live_reload_short_help () {
+_source_reload_short_help () {
   cat <<-HELP
-    live-reload help blurb
+    source-reload help blurb
           - todo - 
 	HELP
 
@@ -325,10 +380,10 @@ _live_reload_short_help () {
 }
 
 
-live-reload () {
-  [[ $# -gt 0 ]] && debug "=> called with '$@'" || debug "=> called with no args"
+main () {
+  (( $# )) && debug "=> called with '$@'" || debug "=> called with no args"
 
-  while [[ $# -gt 0 ]]
+  while (( $# ))
   do
     debug "arg '$1'"
 
@@ -338,7 +393,7 @@ live-reload () {
       init|reset)
         SOURCE_MOD_TIMES=() ;;
       --help|help)
-        _live_reload_help $@ ;;
+        _source_reload_help $@ ;;
       list)
         source-list $@;;
       reload|update)
@@ -352,7 +407,7 @@ live-reload () {
     esac
   done
 
-  _live_reload_short_help
+  _source_reload_short_help
   return 1
 }
 
