@@ -20,14 +20,16 @@ state () { return 1 }
 ################################################
 
 
-alias SOURCE_RELOAD_METHOD='source'
-export SOURCE_RELOAD_METHOD
+declare -g SOURCE_RELOAD_METHOD
+export SOURCE_RELOAD_METHOD='source'
 
 
 # tracks the last reload of targeted files
 #   targets should be defined in glob-form or absolute path
 declare -Ag SOURCE_TRACKER_TIMES
 export SOURCE_TRACKER_TIMES
+declare -Ag SOURCE_TRACKER_ARGS
+export SOURCE_TRACKER_ARGS
 declare -Ag SOURCE_AUTO_TRACKER_TIMES
 export SOURCE_AUTO_TRACKER_TIMES
 declare -Ag SOURCE_AUTO_TRACKER_ARGS
@@ -52,14 +54,46 @@ _source_reload_get_mod_time () {
     _time=$(gstat -c "%Y" "$(realpath "$target")")
     (( $_time )) || _failed=1
   else
+    _failed=1
     warn "no such file or directory: $target" ||
     echo "no such file or directory: $target" >&2
-    _failed=1
   fi
 
   echo $_time
 
-  (( $_failed )) && return 1 || return 0
+  return $_failed
+}
+
+
+_source_reload_import_file () {
+  local file=$1
+  local _failed=0
+
+  # turn even array of key/value pairs into associative-array
+    debug "tracker_args: ${SOURCE_TRACKER_ARGS[$file]}"
+  declare -A tracker_args;
+  tracker_args=(${SOURCE_TRACKER_ARGS[$file]})
+
+  local SOURCE_RELOAD_METHOD="$SOURCE_RELOAD_METHOD"
+  if [[ -n $tracker_args[method] ]]
+  then
+    debug "found configured import method '${tracker_args[method]}'"
+    SOURCE_RELOAD_METHOD="${tracker_args[method]}"
+  fi
+
+
+    debug "attempting to load file via '$SOURCE_RELOAD_METHOD'..."
+
+  if ! $SOURCE_RELOAD_METHOD "$file"
+  then
+    _failed=1
+    warn "failed to load file!"
+  else
+    SOURCE_TRACKER_TIMES[$file]=$_mod_time
+    debug "success, tracking index updated!"
+  fi
+
+  return $_failed;
 }
 
 
@@ -84,14 +118,14 @@ source-reload () {
       # the mod-time here will reflect the parent directory of the glob path
       _mod_time=$( _source_reload_get_mod_time "$(dirname "$glob")" )
 
-      # skip file if _mod_time is 0 (i.e. failed)
+      # skip glob if _mod_time is 0 (i.e. failed)
       if ! (($_mod_time ))
       then
         _failed=1
         continue
       fi
 
-      (( $SOURCE_TRACKER_TIMES[$file] )) && _tracked_time=$SOURCE_AUTO_TRACKER_TIMES[$glob]
+      [[ -n $SOURCE_TRACKER_TIMES[$file] ]] && _tracked_time=$SOURCE_AUTO_TRACKER_TIMES[$glob]
       if (( $_tracked_time < $_mod_time ))
       then
           debug "exploring auto-track glob '$glob'"
@@ -118,41 +152,43 @@ source-reload () {
   _tracked_time=0
   for file in $_sources
   do
-      debug "checking file '$file' timestamps..."
+      debug "checking file '$file'"
 
     _mod_time=$(_source_reload_get_mod_time "$file" 2>/dev/null )
+
+      debug "last: '$SOURCE_TRACKER_TIMES[$file]', curr: '$_mod_time'"
     
     # skip file if _mod_time is 0 (i.e. failed)
-    if ! (($_mod_time ))
+    if ! (( $_mod_time ))
     then
+        debug "could not get mod-time for file '$file'"
 
       if (( $_specified ))
       then
-        # source-reload returns 1 if any specified file fails to load
-        SOURCE_RELOAD_METHOD "$file" || _failed=1
+          debug "file was specified for manual reload"
+        _failed=(( $_failed | $(_source_reload_import_file "$file") ))
+        # bitwise OR to avoid accidentally resetting _failed
       else
-        # only untrack if $file was found by an auto-track pattern
-        (( $(k)SOURCE_AUTO_TRACKED[(Ie)$file] )) && source-untrack "$file"
+        if (( $(k)SOURCE_AUTO_TRACKED[(Ie)$file] ))
+        then
+            debug "removing auto-tracked file..."
+          source-untrack "$file"
+        fi
       fi
-      
       continue
     fi
 
-      debug "last: $SOURCE_TRACKER_TIMES[$file], curr: $_mod_time"
-
-    (( $SOURCE_TRACKER_TIMES[$file] )) && _tracked_time=$SOURCE_TRACKER_TIMES[$file]
+    [[ -n $SOURCE_TRACKER_TIMES[$file] ]] && _tracked_time=$SOURCE_TRACKER_TIMES[$file]
     if (( $_specified || $_tracked_time < $_mod_time ))
     then
       # only log initial file load when state-logging is enabled
       (( $_tracked_time )) && echo "[reloading $file]" || echo "[loading $file]"
 
-      SOURCE_RELOAD_METHOD "$file";
-      SOURCE_TRACKER_TIMES[$file]=$_mod_time
+      _source_reload_import_file "$file"
     fi
   done
 
-
-  (( $_failed )) && return 1 || return 0
+  return $_failed
 }
 
 # automatically check one or more target path-globs for new files to track
@@ -162,20 +198,24 @@ source-auto-track () {
 
   local _glob
 
-  auto_track_args=()
+  auto_tracker_args=()
   while (( $# ))
   do
     case "$1" in
       --set|-s)
-        auto_track_args+=($1 $2)
+        auto_tracker_args+=($1 $2)
+        shift 2
+        ;;
+      --method|-m)
+        auto_tracker_args+=($1 $2)
         shift 2
         ;;
       --immediate|-i)
-        auto_track_args+=($1)
+        auto_tracker_args+=($1)
         shift
         ;;
       --no-load|-n)
-        auto_track_args+=($1)
+        auto_tracker_args+=($1)
         shift
         ;;
       --auto-track|-a)
@@ -189,8 +229,8 @@ source-auto-track () {
         if ! (( $SOURCE_AUTO_TRACKER_TIMES[$_glob] ))
         then
           SOURCE_AUTO_TRACKER_TIMES[$_glob]=0
-          SOURCE_AUTO_TRACKER_ARGS[$_glob]="${auto_track_args[@]}"
-          state "following glob '$_glob' with configuration '${auto_track_args[@]}'"
+          SOURCE_AUTO_TRACKER_ARGS[$_glob]="${auto_tracker_args[@]}"
+          state "following glob '$_glob' with configuration '${auto_tracker_args[@]}'"
         else
           state "already following glob '$_glob'"
         fi
@@ -209,6 +249,7 @@ source-track () {
   local _time
   local _path
 
+  tracker_args=()
   while (( $# ))
   do
     case "$1" in
@@ -223,6 +264,10 @@ source-track () {
       --immediate|-i)
         _time='0'
         shift
+        ;;
+      --method|-m)
+        tracker_args+=("method" "'$2'")
+        shift 2
         ;;
       --no-load|-n)
         _time=''
@@ -249,7 +294,8 @@ source-track () {
             debug "file init time is '$_time'"
 
           SOURCE_TRACKER_TIMES[$_path]="$_time"
-          state "tracking file '$_path' with initial time '$_time'"
+          SOURCE_TRACKER_ARGS[$_path]="${tracker_args[@]}"
+          state "tracking file '$_path' with initial time '$_time' and configuration '${tracker_args[@]}"
         else
           state "already tracking file '$_path'"
         fi
@@ -268,13 +314,13 @@ source-untrack () {
   local _path
   for _path in $@
   do
-    if (( SOURCE_TRACKER_TIMES[$_path] ))
+    if [[ -n $SOURCE_TRACKER_TIMES[$_path] ]]
     then
-
       state "[untracking $_path]"
       unset SOURCE_TRACKER_TIMES[$_path]
+    fi
 
-    elif (( SOURCE_AUTO_TRACKER_TIMES[$_path] ))
+    if [[ -n $SOURCE_AUTO_TRACKER_TIMES[$_path] ]]
     then
       state "[untracking $_path]"
       unset SOURCE_AUTO_TRACKER_TIMES[$_path]
@@ -310,8 +356,22 @@ source-list () {
 
     return 0
   else
-    state 'the following files are being tracked:'
-    echo "${(kj:\n:)SOURCE_TRACKER_TIMES[@]}"
+    if (( $#SOURCE_TRACKER_TIMES ))
+    then
+      state 'the following files are being tracked:'
+      echo "${(kj:\n:)SOURCE_TRACKER_TIMES}"
+    fi
+
+    if (( $#SOURCE_AUTO_TRACKER_TIMES )) && (( $#SOURCE_TRACKER_TIMES ))
+    then
+      state '----' || echo ""
+    fi
+
+    if (( $#SOURCE_AUTO_TRACKER_TIMES ))
+    then
+      state 'the following patterns are being auto-tracked:'
+      echo "${(kj:\n:)SOURCE_AUTO_TRACKER_TIMES}"
+    fi
 
     return 0
   fi
@@ -415,5 +475,4 @@ main () {
   _source_reload_short_help
   return 1
 }
-
 

@@ -4,7 +4,7 @@ source-reload
 ## SYNOPSIS
 Track your dotfiles and shell source files and refresh your shell in real time!
 
-## INSTALLATION
+## r
 
 Clone this repository:
 
@@ -20,16 +20,16 @@ source '/path/to/source-reload.zsh'
 
 To trigger automatic loading of tracked files, call `source-reload` somewhere in your prompt generator:
 
-*ZSH*
+### **ZSH**
 
 ```sh
 (($precmd_functions[(Ie)source-reload])) || precmd_functions+=("source-reload")
 ```
 
-*Bash (coming soon, but not currently available!)*
+### **Bash (coming soon, but not currently available!)**
 
 ```sh
-PS1="source-reload; $PS1"
+PS1="{source-reload;}$PS1"
 ```
 
 ## USAGE
