@@ -4,7 +4,7 @@ source-reload
 ## SYNOPSIS
 Track your dotfiles and shell source files and refresh your shell in real time!
 
-## r
+## INSTALLATION
 
 Clone this repository:
 
@@ -68,23 +68,7 @@ _NOTE: all paths should probably be Absolute paths, for safety!_
 
 If a file added by an auto-track pattern cannot be found, that file will be automatically removed from the tracking index.
 
-The following options may be invoked when auto-tracking a new pattern:
-
-```
-    -s, --set <time>
-
-          Set the initial timestamp of the tracker to the indicated value.
-
-    -i, --immediate
-
-          Causes subsequent files to be loaded as soon as the tracker is created.
-
-          Equivalent to "--set=0"
-
-    -n, --no-load
-
-          Track the file but do not reload it until the next time the file is modified.
-```
+This function takes the same arguments as `source-track`, but will not accept the `--auto-track` flag.
 
 ### source-untrack <file, ...>
 

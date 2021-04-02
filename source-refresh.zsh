@@ -10,7 +10,7 @@ debug () { return 1 }
 state () { return 1 }
 #
 # source "$HOME/.zsh-custom/inject-logger.zsh"
-# log_source "source_reload.zsh"
+# log_source "source_refresh.zsh"
 # log_level 'debug'
 
 
@@ -20,11 +20,11 @@ state () { return 1 }
 ################################################
 
 
-declare -g SOURCE_RELOAD_METHOD
-export SOURCE_RELOAD_METHOD='source'
+declare -g SOURCE_REFRESH_METHOD
+export SOURCE_REFRESH_METHOD='source'
 
 
-# tracks the last reload of targeted files
+# tracks the last refresh of targeted files
 #   targets should be defined in glob-form or absolute path
 declare -Ag SOURCE_TRACKER_TIMES
 export SOURCE_TRACKER_TIMES
@@ -40,7 +40,7 @@ export SOURCE_AUTO_TRACKED
 
 
 # get the "last modified" time of a file
-_source_reload_get_mod_time () {
+_source_refresh_get_mod_time () {
   # (( $# )) && debug "=> called with '$@'"
   (( $# )) || return 1
 
@@ -65,7 +65,7 @@ _source_reload_get_mod_time () {
 }
 
 
-_source_reload_import_file () {
+_source_refresh_import_file () {
   local file=$1
   local _failed=0
 
@@ -74,17 +74,17 @@ _source_reload_import_file () {
   declare -A tracker_args;
   tracker_args=(${SOURCE_TRACKER_ARGS[$file]})
 
-  local SOURCE_RELOAD_METHOD="$SOURCE_RELOAD_METHOD"
+  local SOURCE_REFRESH_METHOD="$SOURCE_REFRESH_METHOD"
   if [[ -n $tracker_args[method] ]]
   then
     debug "found configured import method '${tracker_args[method]}'"
-    SOURCE_RELOAD_METHOD="${tracker_args[method]}"
+    SOURCE_REFRESH_METHOD="${tracker_args[method]}"
   fi
 
 
-    debug "attempting to load file via '$SOURCE_RELOAD_METHOD'..."
+    debug "attempting to load file via '$SOURCE_REFRESH_METHOD'..."
 
-  if ! $SOURCE_RELOAD_METHOD "$file"
+  if ! $SOURCE_REFRESH_METHOD "$file"
   then
     _failed=1
     warn "failed to load file!"
@@ -97,9 +97,9 @@ _source_reload_import_file () {
 }
 
 
-# reload target files via 'source' command
+# refresh target files via 'source' command
 #   targets should be defined in glob-form
-source-reload () {
+source-refresh () {
   (( $# )) && debug "=> called with '$@'" || debug "=> called with no args"
 
   local _specified=0
@@ -116,7 +116,7 @@ source-reload () {
     for glob in ${(k)SOURCE_AUTO_TRACKER_TIMES[@]}
     do
       # the mod-time here will reflect the parent directory of the glob path
-      _mod_time=$( _source_reload_get_mod_time "$(dirname "$glob")" )
+      _mod_time=$( _source_refresh_get_mod_time "$(dirname "$glob")" )
 
       # skip glob if _mod_time is 0 (i.e. failed)
       if ! (($_mod_time ))
@@ -154,7 +154,7 @@ source-reload () {
   do
       debug "checking file '$file'"
 
-    _mod_time=$(_source_reload_get_mod_time "$file" 2>/dev/null )
+    _mod_time=$(_source_refresh_get_mod_time "$file" 2>/dev/null )
 
       debug "last: '$SOURCE_TRACKER_TIMES[$file]', curr: '$_mod_time'"
     
@@ -165,8 +165,8 @@ source-reload () {
 
       if (( $_specified ))
       then
-          debug "file was specified for manual reload"
-        _failed=(( $_failed | $(_source_reload_import_file "$file") ))
+          debug "file was specified for manual refresh"
+        _failed=(( $_failed | $(_source_refresh_import_file "$file") ))
         # bitwise OR to avoid accidentally resetting _failed
       else
         if (( $(k)SOURCE_AUTO_TRACKED[(Ie)$file] ))
@@ -182,9 +182,9 @@ source-reload () {
     if (( $_specified || $_tracked_time < $_mod_time ))
     then
       # only log initial file load when state-logging is enabled
-      (( $_tracked_time )) && echo "[reloading $file]" || echo "[loading $file]"
+      (( $_tracked_time )) && echo "[refreshing $file]" || echo "[loading $file]"
 
-      _source_reload_import_file "$file"
+      _source_refresh_import_file "$file"
     fi
   done
 
@@ -279,8 +279,8 @@ source-track () {
         return 0
         ;;
       --*)
-        warn "source-reload: unknown argument '$1'" ||
-        echo "source-reload: unknown argument '$1'" >&2
+        warn "source-refresh: unknown argument '$1'" ||
+        echo "source-refresh: unknown argument '$1'" >&2
         return 1
         ;;
       *)
@@ -290,7 +290,7 @@ source-track () {
         if ! (( $SOURCE_TRACKER_TIMES[$_path] ))
         then
           # set $_time if it has not yet been set
-          [[ -z "$_time" ]] && _time="$(_source_reload_get_mod_time "$_path")"
+          [[ -z "$_time" ]] && _time="$(_source_refresh_get_mod_time "$_path")"
             debug "file init time is '$_time'"
 
           SOURCE_TRACKER_TIMES[$_path]="$_time"
@@ -378,7 +378,7 @@ source-list () {
 }
 
 
-_source_reload_help () {
+_source_refresh_help () {
   (( $# )) && debug "=> called with '$@'" || debug "=> called with no args"
 
   if (( $# ))
@@ -404,7 +404,7 @@ _source_reload_help () {
           - todo -
 				HELP
         ;;
-      reload)
+      refresh)
         cat <<-HELP
           - todo -
 				HELP
@@ -435,9 +435,9 @@ _source_reload_help () {
 }
 
 
-_source_reload_short_help () {
+_source_refresh_short_help () {
   cat <<-HELP
-    source-reload help blurb
+    source-refresh help blurb
           - todo - 
 	HELP
 
@@ -458,11 +458,11 @@ main () {
       init|reset)
         SOURCE_TRACKER_TIMES=() ;;
       --help|help)
-        _source_reload_help $@ ;;
+        _source_refresh_help $@ ;;
       list)
         source-list $@;;
-      reload|update)
-        source-reload $@ ;;
+      refresh|update)
+        source-refresh $@ ;;
       track)
         source-track $@ ;;
       untrack|forget)
@@ -472,7 +472,7 @@ main () {
     esac
   done
 
-  _source_reload_short_help
+  _source_refresh_short_help
   return 1
 }
 
