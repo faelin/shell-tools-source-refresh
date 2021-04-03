@@ -1,42 +1,42 @@
-source-reload
+source-refresh
 ===
 
 ## SYNOPSIS
-Track your dotfiles and shell source files and refresh your shell in real time!
+Track changes to your dotfiles and shell source files and refresh your shell in real time!
 
 ## INSTALLATION
 
 Clone this repository:
 
 ```
-https://github.com/faelin/shell-tools-source-reload
+https://github.com/faelin/shell-tools-source-refresh
 ```
 
 Add the following somewhere in your shell configuration
 
 ```
-source '/path/to/source-reload.zsh'
+source '/path/to/source-refresh.zsh'
 ```
 
-To trigger automatic loading of tracked files, call `source-reload` somewhere in your prompt generator:
+To trigger automatic loading of tracked files, call `source-refresh` somewhere in your prompt generator:
 
 ### **ZSH**
 
 ```sh
-(($precmd_functions[(Ie)source-reload])) || precmd_functions+=("source-reload")
+(($precmd_functions[(Ie)source-refresh])) || precmd_functions+=("source-refresh")
 ```
 
-### **Bash (coming soon, but not currently available!)**
+### **Bash (coming soon!)**
 
 ```sh
-PS1="{source-reload;}$PS1"
+PS1="{source-refresh;}$PS1"
 ```
 
 ## USAGE
 
 ### source-track [--auto-track] [--set <time>|--immediate|--no-load] <file, ...>
 
-Adds one or more files to the tracking index. Tracked file(s) will be monitored, and will be loaded into the current shell session via the configured loading command (defaults to 'source') any time the file is modified. Loading occurs whenever `source-reload` is called.
+Adds one or more files to the tracking index. Tracked file(s) will be monitored, and will be loaded into the current shell session via the configured loading command (defaults to 'source') any time the file is modified. Loading occurs whenever `source-refresh` is called.
 
 The following options may be invoked when tracking a new file:
 
@@ -57,12 +57,12 @@ The following options may be invoked when tracking a new file:
 
     -n, --no-load
 
-          Track the file but do not reload it until the next time the file is modified.
+          Track the file but do not refresh it until the next time the file is modified
 ```
 
 ### source-auto-track <pattern>
 
-Use this command to automatically look for new files to track. When passed a specific filepath, that file be automatically added to the tracker anytime source-reload runs. When given a glob-pattern, _all_ files matching the pattern will be added to the tracker whenever source-reload runs. Globs are expanded at the time of `source-reload`, 
+Use this command to automatically look for new files to track. When passed a specific filepath, that file be automatically added to the tracker anytime source-refresh runs. When given a glob-pattern, _all_ files matching the pattern will be added to the tracker whenever source-refresh runs. Globs are expanded at the time of `source-refresh`, 
 
 _NOTE: all paths should probably be Absolute paths, for safety!_
 
@@ -76,9 +76,9 @@ Removes the inidicated file(s) from the current shell's tracking index.
 
 _NOTE: this action will not "unload" the file from your shell session!_
 
-### source-reload [file, ...]
+### source-refresh [file, ...]
 
-If no file is given, all tracked files will be checked for updates. If one or more filepaths are provided, the indicated files will be immediately reloaded.
+If no file is given, all tracked files will be checked for updates. If one or more filepaths are provided, the indicated files will be immediately refreshed.
 
 If a file is specified, this will immediately load the file via the configured loading command (defaults to 'source'). The specified file will _not_ be added to the tracking index.
 
@@ -89,7 +89,7 @@ If no file is given, lists all tracked files. Otherwise this will confirm which 
 
 ## EXAMPLE
 ```bash
-source '/Users/example/source-reload.zsh'
+source '/Users/example/source-refresh.zsh'
 
 # track files with optional initialization timestamp
 source-track --immediate $HOME/.p10k.zsh
@@ -97,5 +97,5 @@ source-track --no-load $HOME/.zshrc
 source-track --auto-track '$HOME/.zsh-plugins/*.*sh'
 
 # set a prompt-generator function to check file status
-(($precmd_functions[(Ie)source-reload])) || precmd_functions+=("source-reload")
+(($precmd_functions[(Ie)source-refresh])) || precmd_functions+=("source-refresh")
 ```
