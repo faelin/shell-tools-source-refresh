@@ -43,6 +43,20 @@ declare -Ag SOURCE_AUTO_TRACKED   # (per-file) mod-times for globbed files
 export SOURCE_AUTO_TRACKED
 
 
+_source_refresh_setup_logs () {
+  mkdir -p "$(dirname "$1")"
+  for dir in $HOME/.source-refresh/*
+  do
+    # remove unused log directories
+    if (( `gstat -c "%Y" "$dir"` < `date +%s` - $SOURCE_REFRESH_LOG_TTL )) && ! ps -p $(basename "$dir") 2>&1 > /dev/null
+    then
+      rm -rf "$HOME/.source-refresh/$(basename "$dir")"
+    fi
+  done
+  echo > "$1"
+}
+_source_refresh_setup_logs "$SOURCE_REFRESH_LOG_PATH"
+
 
 # get the "last modified" time of a file or directory
 _source_refresh_get_mod_time () {
