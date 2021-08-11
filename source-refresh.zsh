@@ -26,15 +26,15 @@ export SOURCE_REFRESH_METHOD='source'
 
 # tracks the last refresh of targeted files
 #   targets should be defined in glob-form or absolute path
-declare -Ag SOURCE_TRACKER_TIMES
+declare -Ag SOURCE_TRACKER_TIMES  # (per-file) mod-times
 export SOURCE_TRACKER_TIMES
-declare -Ag SOURCE_TRACKER_ARGS
+declare -Ag SOURCE_TRACKER_ARGS  # (per-file) arguments called while sourcing
 export SOURCE_TRACKER_ARGS
-declare -Ag SOURCE_AUTO_TRACKER_TIMES
+declare -Ag SOURCE_AUTO_TRACKER_TIMES  # (per-glob) last-checked times for trackers
 export SOURCE_AUTO_TRACKER_TIMES
-declare -Ag SOURCE_AUTO_TRACKER_ARGS
+declare -Ag SOURCE_AUTO_TRACKER_ARGS  # (per-glob) arguments for each tracker
 export SOURCE_AUTO_TRACKER_ARGS
-declare -Ag SOURCE_AUTO_TRACKED
+declare -Ag SOURCE_AUTO_TRACKED   # (per-file) mod-times for globbed files
 export SOURCE_AUTO_TRACKED
 
 
