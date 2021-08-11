@@ -171,6 +171,7 @@ source-refresh () {
       else
         if [ "$(k)SOURCE_AUTO_TRACKED[(e)$file]" ]
         then
+          # if file exists in the auto-tracked list, untrack it
             debug "removing auto-tracked file..."
           source-untrack "$file"
         fi
