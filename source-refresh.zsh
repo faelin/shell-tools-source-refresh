@@ -97,6 +97,11 @@ _source_refresh_import_file () {
 }
 
 
+_source_refresh_conf_string () {
+  [ "$@" ] && echo "with configuration '$@'"
+}
+
+
 # refresh target files via 'source' command
 #   targets should be defined in glob-form
 source-refresh () {
@@ -231,7 +236,7 @@ source-auto-track () {
         then
           SOURCE_AUTO_TRACKER_TIMES[$_glob]=0
           SOURCE_AUTO_TRACKER_ARGS[$_glob]="${auto_tracker_args[@]}"
-          state "following glob '$_glob' with configuration '${auto_tracker_args[@]}'"
+          state "following glob '$_glob' $(_source_refresh_conf_string "${auto_tracker_args[@]}")"
         else
           state "already following glob '$_glob'"
         fi
@@ -300,7 +305,7 @@ source-track () {
 
           SOURCE_TRACKER_TIMES[$_path]="$_time"
           SOURCE_TRACKER_ARGS[$_path]="${tracker_args[@]}"
-          state "tracking file '$_path' with initial time '$_time' and configuration '${tracker_args[@]}"
+          state "tracking file '$_path' with initial time '$_time' $(_source_refresh_conf_string "${tracker_args[@]}")"
         else
           state "already tracking file '$_path'"
         fi
