@@ -254,19 +254,23 @@ source-track () {
   while (( $# ))
   do
     case "$1" in
+      --set=*|-s=*)
+        _time="${1#*=}"
+        shift
+        ;;
       --set|-s)
         _time="$2"
         shift 2
-        ;;
-      --set*|-s*)
-        _time="${1##*=}"
-        shift
         ;;
       --immediate|-i)
         _time='0'
         shift
         ;;
-      --method|-m)
+      --source-command=*|--method=*|-m=*)
+        tracker_args+=("method" "'${1#*=}'")
+        shift 2
+        ;;
+      --source-command|--method|-m)
         tracker_args+=("method" "'$2'")
         shift 2
         ;;
@@ -279,7 +283,7 @@ source-track () {
         source-auto-track $@
         return 0
         ;;
-      --*)
+      --*|-*)
         warn "source-refresh: unknown argument '$1'" ||
         echo "source-refresh: unknown argument '$1'" >&2
         return 1
