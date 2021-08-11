@@ -1,8 +1,15 @@
-source-refresh
-===
+# source-refresh
+
+Track changes to your dotfiles and shell source files and refresh your shell in real time!
 
 ## SYNOPSIS
-Track changes to your dotfiles and shell source files and refresh your shell in real time!
+
+```
+source '/users/example/source-refresh.zsh'
+
+source-track --no-load '$HOME/.zshrc'
+source-track --auto-track --immediate '$HOME/custom-scripts/*.sh'
+```
 
 ## INSTALLATION
 
@@ -58,6 +65,10 @@ The following options may be invoked when tracking a new file:
     -n, --no-load
 
           Track the file but do not refresh it until the next time the file is modified
+
+    -m, --method
+
+          The command that will be used to import files for this tracker.
 ```
 
 ### source-auto-track <pattern>
