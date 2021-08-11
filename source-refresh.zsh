@@ -44,7 +44,7 @@ export SOURCE_AUTO_TRACKED
 
 
 
-# get the "last modified" time of a file
+# get the "last modified" time of a file or directory
 _source_refresh_get_mod_time () {
   # (( $# )) && debug "=> called with '$@'"
   (( $# )) || return 1
