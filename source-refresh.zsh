@@ -44,14 +44,14 @@ _source_refresh_get_mod_time () {
   # (( $# )) && debug "=> called with '$@'"
   (( $# )) || return 1
 
-  target=$(eval "echo \"$1\"")
+  target="$(eval "echo \"$1\"")"
 
   local _failed=0
   local _time=0
 
   if [ -e "$target" ]
   then
-    _time=$(gstat -c "%Y" "$(realpath "$target")")
+    _time="$(gstat -c "%Y" "$(realpath "$target")")"
     (( $_time )) || _failed=1
   else
     _failed=1
@@ -66,7 +66,7 @@ _source_refresh_get_mod_time () {
 
 
 _source_refresh_import_file () {
-  local file=$1
+  local file="$1"
   local _failed=0
 
   # turn even array of key/value pairs into associative-array
@@ -75,7 +75,7 @@ _source_refresh_import_file () {
   tracker_args=(${SOURCE_TRACKER_ARGS[$file]})
 
   local SOURCE_REFRESH_METHOD="$SOURCE_REFRESH_METHOD"
-  if [[ -n $tracker_args[method] ]]
+  if [ "$tracker_args[method]" ]
   then
     debug "found configured import method '${tracker_args[method]}'"
     SOURCE_REFRESH_METHOD="${tracker_args[method]}"
@@ -89,7 +89,7 @@ _source_refresh_import_file () {
     _failed=1
     warn "failed to load file!"
   else
-    SOURCE_TRACKER_TIMES[$file]=$_mod_time
+    SOURCE_TRACKER_TIMES[$file]="$_mod_time"
     debug "success, tracking index updated!"
   fi
 
@@ -116,7 +116,7 @@ source-refresh () {
     for glob in ${(k)SOURCE_AUTO_TRACKER_TIMES[@]}
     do
       # the mod-time here will reflect the parent directory of the glob path
-      _mod_time=$( _source_refresh_get_mod_time "$(dirname "$glob")" )
+      _mod_time="$( _source_refresh_get_mod_time "$(dirname "$glob")" )"
 
       # skip glob if _mod_time is 0 (i.e. failed)
       if ! (($_mod_time ))
@@ -125,19 +125,19 @@ source-refresh () {
         continue
       fi
 
-      [[ -n $SOURCE_TRACKER_TIMES[$file] ]] && _tracked_time=$SOURCE_AUTO_TRACKER_TIMES[$glob]
+      [ "$SOURCE_TRACKER_TIMES[$file]" ] && _tracked_time="${SOURCE_AUTO_TRACKER_TIMES[$glob]}"
       if (( $_tracked_time < $_mod_time ))
       then
           debug "exploring auto-track glob '$glob'"
           # debug "found configuration '${SOURCE_AUTO_TRACKER_ARGS[$glob]}'"
 
-        SOURCE_AUTO_TRACKER_TIMES[$glob]=$_mod_time
+        SOURCE_AUTO_TRACKER_TIMES[$glob]="$_mod_time"
         for file in $(eval "echo $glob")
         do
             debug "tracking-glob found '$file'"
 
-          source-track $SOURCE_AUTO_TRACKER_ARGS[$glob] "$file" &&
-          SOURCE_AUTO_TRACKED[$file]=$_mod_time
+          source-track ${SOURCE_AUTO_TRACKER_ARGS[$glob]} "$file" &&
+          SOURCE_AUTO_TRACKED[$file]="$_mod_time"
         done
       else
         debug "auto-track skipped glob '$glob' (up-to-date)"
@@ -154,9 +154,9 @@ source-refresh () {
   do
       debug "checking file '$file'"
 
-    _mod_time=$(_source_refresh_get_mod_time "$file" 2>/dev/null )
+    _mod_time="$(_source_refresh_get_mod_time "$file" 2>/dev/null )"
 
-      debug "last: '$SOURCE_TRACKER_TIMES[$file]', curr: '$_mod_time'"
+      debug "last: '${SOURCE_TRACKER_TIMES[$file]}', curr: '$_mod_time'"
     
     # skip file if _mod_time is 0 (i.e. failed)
     if ! (( $_mod_time ))
@@ -169,7 +169,7 @@ source-refresh () {
         _failed=(( $_failed | $(_source_refresh_import_file "$file") ))
         # bitwise OR to avoid accidentally resetting _failed
       else
-        if (( $(k)SOURCE_AUTO_TRACKED[(Ie)$file] ))
+        if [ "$(k)SOURCE_AUTO_TRACKED[(e)$file]" ]
         then
             debug "removing auto-tracked file..."
           source-untrack "$file"
@@ -178,7 +178,7 @@ source-refresh () {
       continue
     fi
 
-    [[ -n $SOURCE_TRACKER_TIMES[$file] ]] && _tracked_time=$SOURCE_TRACKER_TIMES[$file]
+    [ "$SOURCE_TRACKER_TIMES[$file]" ] && _tracked_time="${SOURCE_TRACKER_TIMES[$file]}"
     if (( $_specified || $_tracked_time < $_mod_time ))
     then
       # only log initial file load when state-logging is enabled
@@ -226,7 +226,7 @@ source-auto-track () {
         _glob="$1"
         shift
 
-        if ! (( $SOURCE_AUTO_TRACKER_TIMES[$_glob] ))
+        if ! (( ${SOURCE_AUTO_TRACKER_TIMES[$_glob]} ))
         then
           SOURCE_AUTO_TRACKER_TIMES[$_glob]=0
           SOURCE_AUTO_TRACKER_ARGS[$_glob]="${auto_tracker_args[@]}"
@@ -287,7 +287,7 @@ source-track () {
         _path="$1"
         shift
 
-        if ! (( $SOURCE_TRACKER_TIMES[$_path] ))
+        if ! (( ${SOURCE_TRACKER_TIMES[$_path]} ))
         then
           # set $_time if it has not yet been set
           [[ -z "$_time" ]] && _time="$(_source_refresh_get_mod_time "$_path")"
@@ -314,13 +314,13 @@ source-untrack () {
   local _path
   for _path in $@
   do
-    if [[ -n $SOURCE_TRACKER_TIMES[$_path] ]]
+    if [ "$SOURCE_TRACKER_TIMES[$_path]" ]
     then
       state "[untracking $_path]"
       unset SOURCE_TRACKER_TIMES[$_path]
     fi
 
-    if [[ -n $SOURCE_AUTO_TRACKER_TIMES[$_path] ]]
+    if [ "$SOURCE_AUTO_TRACKER_TIMES[$_path]" ]
     then
       state "[untracking $_path]"
       unset SOURCE_AUTO_TRACKER_TIMES[$_path]
