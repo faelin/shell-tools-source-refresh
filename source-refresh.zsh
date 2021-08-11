@@ -11,10 +11,13 @@ warn  () { echo $@ >> "$SOURCE_REFRESH_LOG_PATH" }
 state () { echo $@ >> "$SOURCE_REFRESH_LOG_PATH" }
 debug () { echo $@ >> "$SOURCE_REFRESH_LOG_PATH" }
 #
-# source "$HOME/.zsh-custom/inject-logger.zsh"
-# log_source "source_refresh.zsh"
-# log_level 'debug'
-
+# load inject-logger if it is available
+if source "$LOGGER_SOURCE_LOCATION" 2>/dev/null;
+then
+  log_source "source_refresh.zsh"
+  log_level 'warn'
+  log_destination "$SOURCE_REFRESH_LOG_PATH"
+fi
 
 
 ################################################
