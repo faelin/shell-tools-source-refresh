@@ -5,9 +5,11 @@
 #
 # empty logging functions to avoid errors
 #  for anyone who lacks inject-logger
-warn () { return 1 }
-debug () { return 1 }
-state () { return 1 }
+SOURCE_REFRESH_LOG_PATH="$HOME/.source-refresh/$$/log"
+SOURCE_REFRESH_LOG_TTL=864000  # 10 days in seconds
+warn  () { echo $@ >> "$SOURCE_REFRESH_LOG_PATH" }
+state () { echo $@ >> "$SOURCE_REFRESH_LOG_PATH" }
+debug () { echo $@ >> "$SOURCE_REFRESH_LOG_PATH" }
 #
 # source "$HOME/.zsh-custom/inject-logger.zsh"
 # log_source "source_refresh.zsh"
