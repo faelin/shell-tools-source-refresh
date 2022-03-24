@@ -4,7 +4,7 @@
 ### LOGGING UTILITY ###
 #
 # empty logging functions to avoid errors
-#  for anyone who lacks inject-logger
+#  for anyone who lacks simple-logger
 SOURCE_REFRESH_LOG_PATH="$HOME/.source-refresh/$$/log"
 SOURCE_REFRESH_LOG_TTL=864000  # 10 days in seconds
 warn  () { echo $@ >> "$SOURCE_REFRESH_LOG_PATH" }
