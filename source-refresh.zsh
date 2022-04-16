@@ -3,20 +3,20 @@
 
 ### LOGGING UTILITY ###
 #
-# empty logging functions to avoid errors
-#  for anyone who lacks simple-logger
+# load simple-logger if it is available
 SOURCE_REFRESH_LOG_PATH="$HOME/.source-refresh/$$/log"
 SOURCE_REFRESH_LOG_TTL=864000  # 10 days in seconds
-warn  () { echo $@ >> "$SOURCE_REFRESH_LOG_PATH" }
-state () { echo $@ >> "$SOURCE_REFRESH_LOG_PATH" }
-debug () { echo $@ >> "$SOURCE_REFRESH_LOG_PATH" }
-#
-# load inject-logger if it is available
 if source "$LOGGER_SOURCE_LOCATION" 2>/dev/null;
 then
   log_source "source_refresh.zsh"
   log_level 'warn'
   log_destination "$SOURCE_REFRESH_LOG_PATH"
+else
+  # empty logging functions to avoid errors
+  #  for anyone who lacks simple-logger
+  warn  () { echo $@ > /dev/null }
+  state () { echo $@ > /dev/null }
+  debug () { echo $@ > /dev/null }
 fi
 
 
