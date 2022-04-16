@@ -307,6 +307,10 @@ source-track () {
         source-auto-track $@
         return 0
         ;;
+      --refresh|-r)
+        shift
+        source-refresh
+        ;;
       --*|-*)
         warn "source-refresh: unknown argument '$1'" ||
         echo "source-refresh: unknown argument '$1'" >&2
