@@ -1,11 +1,12 @@
 #!/bin/zsh
 
+alias gstat=/usr/local/bin/gstat
 
 ### LOGGING UTILITY ###
 #
 # load simple-logger if it is available
-SOURCE_REFRESH_LOG_PATH="$HOME/.source-refresh/$$/log"
-SOURCE_REFRESH_LOG_TTL=864000  # 10 days in seconds
+SOURCE_REFRESH_LOG_PATH="$HOME/.source-refresh/log/$$"
+SOURCE_REFRESH_LOG_TTL=3600  # 1 hour in seconds
 if source "$LOGGER_SOURCE_LOCATION" 2>/dev/null;
 then
   log_source "source_refresh.zsh"
@@ -44,15 +45,30 @@ export SOURCE_AUTO_TRACKED
 
 
 _source_refresh_setup_logs () {
-  mkdir -p "$(dirname "$1")"
-  for dir in $HOME/.source-refresh/*
+  # setup
+  local _ttl="$((  $(date '+%s') - $SOURCE_REFRESH_LOG_TTL  ))"
+  local _log_dir="$(dirname "$SOURCE_REFRESH_LOG_TTL")"
+  # mkdir -p "$_log_dir"
+
+  # TODO: use associative array to track log file expiration in-memory
+  
+  declare -Ag SOURCE_TRACK_LOG_TIMES
+  export SOURCE_TRACK_LOG_TIMES
+
+  # remove unneeded log files
+  setopt localoptions nullglob
+  for log in $HOME/.source-refresh/log/*
   do
-    # remove unused log directories
-    if (( `gstat -c "%Y" "$dir"` < `date +%s` - $SOURCE_REFRESH_LOG_TTL )) && ! ps -p $(basename "$dir") 2>&1 > /dev/null
+    local _log_name="$(basename "$log")"
+
+    SOURCE_TRACK_LOG_TIMES["$_log_name"]="$(gstat --format "%Y" "$log")"
+
+    if ! ps -p "$_log_name" 2>&1 > /dev/null && (( ${SOURCE_TRACK_LOG_TIMES["$_log_name"]} < $_ttl ))
     then
-      rm -rf "$HOME/.source-refresh/$(basename "$dir")"
+      rm -f "$log"
     fi
   done
+
   echo > "$1"
 }
 _source_refresh_setup_logs "$SOURCE_REFRESH_LOG_PATH"
@@ -70,7 +86,7 @@ _source_refresh_get_mod_time () {
 
   if [ -e "$target" ]
   then
-    _time="$(gstat -c "%Y" "$(realpath "$target")")"
+    _time="$(gstat --format "%Y" "$(realpath "$target")")"
     (( $_time )) || _failed=1
   else
     _failed=1
@@ -100,16 +116,16 @@ _source_refresh_import_file () {
     SOURCE_REFRESH_METHOD="${tracker_args[method]}"
   fi
 
+  debug "attempting to load file via '$SOURCE_REFRESH_METHOD'..."
 
-    debug "attempting to load file via '$SOURCE_REFRESH_METHOD'..."
-
-  if ! $SOURCE_REFRESH_METHOD "$file"
+  $SOURCE_REFRESH_METHOD "$file"
+  if (( !? ))  # shortcut to check command exit status
   then
-    _failed=1
-    warn "failed to load file!"
-  else
     SOURCE_TRACKER_TIMES[$file]="$_mod_time"
     debug "success, tracking index updated!"
+  else
+    _failed=1
+    warn "failed to load file!"
   fi
 
   return $_failed;
